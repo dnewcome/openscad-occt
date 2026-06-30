@@ -12,9 +12,17 @@
 #include <gp_Trsf.hxx>
 #include <gp_Vec.hxx>
 
+#include <gp_Circ.hxx>
+
+#include <BRepBuilderAPI_MakeEdge.hxx>
+#include <BRepBuilderAPI_MakeFace.hxx>
+#include <BRepBuilderAPI_MakePolygon.hxx>
+#include <BRepBuilderAPI_MakeWire.hxx>
 #include <BRepPrimAPI_MakeBox.hxx>
 #include <BRepPrimAPI_MakeCone.hxx>
 #include <BRepPrimAPI_MakeCylinder.hxx>
+#include <BRepPrimAPI_MakePrism.hxx>
+#include <BRepPrimAPI_MakeRevol.hxx>
 #include <BRepPrimAPI_MakeSphere.hxx>
 #include <BRepAlgoAPI_Common.hxx>
 #include <BRepAlgoAPI_Cut.hxx>
@@ -31,6 +39,7 @@
 #include <TopTools_IndexedMapOfShape.hxx>
 #include <TopoDS.hxx>
 #include <TopoDS_Edge.hxx>
+#include <TopoDS_Wire.hxx>
 
 namespace {
 
@@ -65,6 +74,71 @@ TopoDS_Shape makeCylinder(const CylinderNode& c) {
   if (std::abs(c.r1 - c.r2) < 1e-12)
     return BRepPrimAPI_MakeCylinder(axis, c.r1, c.h).Shape();
   return BRepPrimAPI_MakeCone(axis, c.r1, c.r2, c.h).Shape();
+}
+
+// ---- 2D primitives (planar faces in the z=0 plane) ----
+TopoDS_Shape faceFromClosedWire(const TopoDS_Wire& w) {
+  return BRepBuilderAPI_MakeFace(w, /*OnlyPlane=*/Standard_True).Face();
+}
+
+TopoDS_Shape makeSquare(const SquareNode& s) {
+  if (s.x <= 0 || s.y <= 0) return {};
+  double x0 = s.center ? -s.x / 2 : 0, y0 = s.center ? -s.y / 2 : 0;
+  BRepBuilderAPI_MakePolygon poly(gp_Pnt(x0, y0, 0), gp_Pnt(x0 + s.x, y0, 0),
+                                  gp_Pnt(x0 + s.x, y0 + s.y, 0), gp_Pnt(x0, y0 + s.y, 0),
+                                  Standard_True);
+  return faceFromClosedWire(poly.Wire());
+}
+
+TopoDS_Shape makeCircle(const CircleNode& c) {
+  if (c.r <= 0) return {};
+  if (c.fn >= 3) {  // OpenSCAD circle($fn=n) idiom: an exact regular n-gon
+    BRepBuilderAPI_MakePolygon poly;
+    for (int i = 0; i < c.fn; ++i) {
+      double a = 2 * M_PI * i / c.fn;
+      poly.Add(gp_Pnt(c.r * std::cos(a), c.r * std::sin(a), 0));
+    }
+    poly.Close();
+    return faceFromClosedWire(poly.Wire());
+  }
+  gp_Circ circ(gp_Ax2(gp_Pnt(0, 0, 0), gp_Dir(0, 0, 1)), c.r);  // exact circle
+  TopoDS_Wire w = BRepBuilderAPI_MakeWire(BRepBuilderAPI_MakeEdge(circ).Edge()).Wire();
+  return faceFromClosedWire(w);
+}
+
+TopoDS_Shape makePolygon(const PolygonNode& p) {
+  if (p.points.size() < 3) return {};
+  BRepBuilderAPI_MakePolygon poly;
+  for (const auto& pt : p.points) poly.Add(gp_Pnt(pt.first, pt.second, 0));
+  poly.Close();
+  if (!poly.IsDone()) return {};
+  return faceFromClosedWire(poly.Wire());
+}
+
+// ---- 2D -> 3D ----
+TopoDS_Shape makeLinearExtrude(const LinearExtrudeNode& n) {
+  TopoDS_Shape profile = unionOf(n.children);
+  if (profile.IsNull() || n.height <= 0) return {};
+  TopoDS_Shape solid = BRepPrimAPI_MakePrism(profile, gp_Vec(0, 0, n.height)).Shape();
+  if (n.center) {
+    gp_Trsf t;
+    t.SetTranslation(gp_Vec(0, 0, -n.height / 2));
+    solid = applyTrsf(solid, t);
+  }
+  return solid;
+}
+
+TopoDS_Shape makeRotateExtrude(const RotateExtrudeNode& n) {
+  TopoDS_Shape profile = unionOf(n.children);
+  if (profile.IsNull()) return {};
+  // OpenSCAD maps the profile's (x,y) to (radius, height): rotate +90 deg about X
+  // so (x,y,0) -> (x,0,y), then revolve about the global Z axis.
+  gp_Trsf toXZ;
+  toXZ.SetRotation(gp_Ax1(gp_Pnt(0, 0, 0), gp_Dir(1, 0, 0)), M_PI / 2);
+  TopoDS_Shape prof = applyTrsf(profile, toXZ);
+  gp_Ax1 axis(gp_Pnt(0, 0, 0), gp_Dir(0, 0, 1));
+  if (std::abs(n.angle) >= 360.0) return BRepPrimAPI_MakeRevol(prof, axis).Shape();
+  return BRepPrimAPI_MakeRevol(prof, axis, n.angle * kDeg2Rad).Shape();
 }
 
 // ---- transforms ----
@@ -204,6 +278,11 @@ TopoDS_Shape buildShape(const Node& node) {
     case NodeKind::Cube:      return makeCube(static_cast<const CubeNode&>(node));
     case NodeKind::Sphere:    return makeSphere(static_cast<const SphereNode&>(node));
     case NodeKind::Cylinder:  return makeCylinder(static_cast<const CylinderNode&>(node));
+    case NodeKind::Square:    return makeSquare(static_cast<const SquareNode&>(node));
+    case NodeKind::Circle:    return makeCircle(static_cast<const CircleNode&>(node));
+    case NodeKind::Polygon:   return makePolygon(static_cast<const PolygonNode&>(node));
+    case NodeKind::LinearExtrude: return makeLinearExtrude(static_cast<const LinearExtrudeNode&>(node));
+    case NodeKind::RotateExtrude: return makeRotateExtrude(static_cast<const RotateExtrudeNode&>(node));
     case NodeKind::Translate: return makeTranslate(static_cast<const TranslateNode&>(node));
     case NodeKind::Rotate:    return makeRotate(static_cast<const RotateNode&>(node));
     case NodeKind::Scale:     return makeScale(static_cast<const ScaleNode&>(node));

@@ -6,6 +6,8 @@
 
 enum class NodeKind {
   Cube, Sphere, Cylinder,          // 3D primitives
+  Square, Circle, Polygon,         // 2D primitives (planar faces in z=0)
+  LinearExtrude, RotateExtrude,    // 2D -> 3D
   Translate, Rotate, Scale, Mirror,// transforms
   Union, Difference, Intersection, // booleans
   Fillet,                          // B-Rep edge rounding (beyond OpenSCAD)
@@ -37,6 +39,36 @@ struct CylinderNode : Node {
   bool center = false;
   int fn = 0;
   CylinderNode() : Node(NodeKind::Cylinder) {}
+};
+
+// ---- 2D primitives (built as planar faces in the z=0 plane) ----
+struct SquareNode : Node {
+  double x = 1, y = 1;
+  bool center = false;
+  SquareNode() : Node(NodeKind::Square) {}
+};
+
+struct CircleNode : Node {
+  double r = 1;
+  int fn = 0;  // fn>=3 -> regular n-gon (OpenSCAD hexagon idiom); else exact circle
+  CircleNode() : Node(NodeKind::Circle) {}
+};
+
+struct PolygonNode : Node {
+  std::vector<std::pair<double, double>> points;  // single closed path
+  PolygonNode() : Node(NodeKind::Polygon) {}
+};
+
+// ---- 2D -> 3D ----
+struct LinearExtrudeNode : Node {  // straight prism along +Z
+  double height = 1;
+  bool center = false;
+  LinearExtrudeNode() : Node(NodeKind::LinearExtrude) {}
+};
+
+struct RotateExtrudeNode : Node {  // revolve the profile about the Z axis
+  double angle = 360;  // degrees
+  RotateExtrudeNode() : Node(NodeKind::RotateExtrude) {}
 };
 
 struct TranslateNode : Node {

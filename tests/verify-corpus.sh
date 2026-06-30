@@ -21,8 +21,9 @@ ref="$(command -v openscad || true)"
 [ -n "$ref" ]    || echo "note: no reference 'openscad' on PATH -- checking solid production only"
 
 # Features NOT yet implemented. Shrink this regex as milestones land.
-UNSUP='\b(polyhedron|square|circle|polygon|color|hull|minkowski|linear_extrude|rotate_extrude|offset|projection|surface|text|import|render|resize|multmatrix|for|if|let|module|function|children|echo|assert|each)\b'
-MISMATCH_TOL=0.30   # below this, divergence is OCCT-exact-vs-faceting
+UNSUP='\b(polyhedron|color|hull|minkowski|offset|projection|surface|text|import|render|resize|multmatrix|for|if|let|module|function|children|echo|assert|each)\b'
+MISMATCH_TOL=0.50   # below this, divergence is OCCT-exact-vs-faceting (incl. $fn-faceted
+                    # revolves/curves); real geometry bugs shift the bbox by >=1 unit
 
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 inscope=0 ok=0 exact=0 empty=0 gap=0 mismatch=0

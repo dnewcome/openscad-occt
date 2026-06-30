@@ -14,9 +14,11 @@ Why OCCT:
 
 | Area        | Supported |
 |-------------|-----------|
-| Primitives  | `cube`, `sphere`, `cylinder` (incl. cones via `r1`/`r2`) |
+| 3D primitives | `cube`, `sphere`, `cylinder` (incl. cones via `r1`/`r2`) |
+| 2D primitives | `square`, `circle` (`$fn`≥3 → exact n-gon), `polygon` |
+| 2D → 3D     | `linear_extrude(height, center)`, `rotate_extrude(angle)` |
 | Transforms  | `translate`, `rotate` (Euler + axis-angle), `scale`, `mirror` |
-| Booleans    | `union`, `difference`, `intersection` (+ implicit top-level union) |
+| Booleans    | `union`, `difference`, `intersection` — 2D (faces-with-holes) and 3D |
 | Features    | `fillet(r, edges="all"\|"convex"\|"concave")` / `round(...)` — exact B-Rep edge rounding (beyond OpenSCAD) |
 | Language    | numbers, vectors, strings, arithmetic (`+ - * /`), `name = expr;`, named/positional args, `$fn` (parsed) |
 | Output      | binary **STL** (tessellated) and **STEP** (exact B-Rep) |
@@ -38,10 +40,15 @@ through OCCT's STEP reader), bounding boxes match reference OpenSCAD, and curved
 surfaces are carried *exactly* (e.g. a sphere bite exports as a `SPHERICAL_SURFACE`,
 a tapered cylinder as a `CONICAL_SURFACE`).
 
+2D shapes become planar faces in z=0; 2D booleans yield faces-with-holes that
+`linear_extrude` turns into solids with holes; `rotate_extrude` maps the profile's
+`(x,y)` to `(radius, height)` and revolves about Z (a torus exports as an exact
+`TOROIDAL_SURFACE`). Unsupported extrude options (`twist=`, `scale=`, `start=`)
+**fail loud** rather than emit a silently-wrong shape.
+
 ### Not yet (future milestones)
-2D shapes & extrudes (`square`/`circle`/`polygon`, `linear_extrude`/`rotate_extrude`),
-user modules/functions, `for`/`if`, `hull`/`minkowski`/`offset`, `import`, text,
-per-feature `$fn` honoring, and a GL preview GUI.
+`twist`/`scale` `linear_extrude` and `start` `rotate_extrude`, user modules/functions,
+`for`/`if`, `hull`/`minkowski`/`offset`, `import`, text, and a GL preview GUI.
 
 ## Architecture
 

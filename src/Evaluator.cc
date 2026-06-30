@@ -120,6 +120,15 @@ Args bindArgs(const CallStmt& call, const std::vector<std::string>& params, cons
   return a;
 }
 
+// Resolve $fn: a per-call named arg ($fn=6) overrides the ambient scope value,
+// matching OpenSCAD's special-variable (dynamic) scoping.
+int resolveFn(const Args& a, const Scope& scope) {
+  if (a.has("$fn") && a.get("$fn").isNumber()) return (int)a.get("$fn").asNumber();
+  auto it = scope.find("$fn");
+  if (it != scope.end() && it->second.isNumber()) return (int)it->second.asNumber();
+  return 0;
+}
+
 // ---- statement execution -> CSG nodes ----
 void execStmt(const Stmt* s, Scope& scope, std::vector<NodePtr>& out);
 
@@ -149,8 +158,7 @@ NodePtr buildPrimitive(const CallStmt& call, const Scope& scope) {
     if (a.has("d"))      n->r = a.get("d").asNumber() / 2.0;
     else if (a.has("r")) n->r = a.get("r").asNumber();
     else                 n->r = 1.0;
-    auto fn = scope.find("$fn");
-    n->fn = (fn != scope.end() && fn->second.isNumber()) ? (int)fn->second.num : 0;
+    n->fn = resolveFn(a, scope);
     return n;
   }
 
@@ -166,8 +174,39 @@ NodePtr buildPrimitive(const CallStmt& call, const Scope& scope) {
     n->r2 = a.has("d2") ? a.get("d2").asNumber() / 2.0
                         : (a.has("r2") ? a.get("r2").asNumber() : r);
     n->center = a.getOr("center", Value::makeBool(false)).asBool();
-    auto fn = scope.find("$fn");
-    n->fn = (fn != scope.end() && fn->second.isNumber()) ? (int)fn->second.num : 0;
+    n->fn = resolveFn(a, scope);
+    return n;
+  }
+
+  if (m == "square") {
+    Args a = bindArgs(call, {"size", "center"}, scope);
+    auto n = std::make_shared<SquareNode>();
+    auto xy = a.getOr("size", Value::makeNumber(1)).asVecN(2);
+    n->x = xy[0]; n->y = xy[1];
+    n->center = a.getOr("center", Value::makeBool(false)).asBool();
+    return n;
+  }
+
+  if (m == "circle") {
+    Args a = bindArgs(call, {"r"}, scope);
+    auto n = std::make_shared<CircleNode>();
+    if (a.has("d"))      n->r = a.get("d").asNumber() / 2.0;
+    else if (a.has("r")) n->r = a.get("r").asNumber();
+    else                 n->r = 1.0;
+    n->fn = resolveFn(a, scope);
+    return n;
+  }
+
+  if (m == "polygon") {
+    Args a = bindArgs(call, {"points"}, scope);
+    if (!a.has("points")) throw std::runtime_error("polygon(): missing points");
+    Value pts = a.get("points");
+    if (!pts.isVector()) throw std::runtime_error("polygon(): points must be a vector of [x,y]");
+    auto n = std::make_shared<PolygonNode>();
+    for (const auto& p : pts.vec) {
+      auto xy = p.asVecN(2);
+      n->points.emplace_back(xy[0], xy[1]);
+    }
     return n;
   }
   return nullptr;
@@ -175,6 +214,35 @@ NodePtr buildPrimitive(const CallStmt& call, const Scope& scope) {
 
 NodePtr buildTransform(const CallStmt& call, Scope& scope) {
   const std::string& m = call.name;
+
+  if (m == "linear_extrude") {
+    Args a = bindArgs(call, {"height"}, scope);
+    // Tapered/twisted extrude not implemented yet -- fail loud rather than emit a
+    // straight prism that silently disagrees with the model.
+    if (a.has("twist") && a.get("twist").asNumber() != 0.0)
+      throw std::runtime_error("linear_extrude: twist= not yet supported");
+    if (a.has("scale")) {
+      auto sc = a.get("scale").asVecN(2);
+      if (sc[0] != 1.0 || sc[1] != 1.0)
+        throw std::runtime_error("linear_extrude: scale= not yet supported");
+    }
+    auto n = std::make_shared<LinearExtrudeNode>();
+    n->height = a.has("height") ? a.get("height").asNumber()
+              : (a.has("h") ? a.get("h").asNumber() : 1.0);
+    n->center = a.getOr("center", Value::makeBool(false)).asBool();
+    n->children = execChildren(call, scope);
+    return n;
+  }
+
+  if (m == "rotate_extrude") {
+    Args a = bindArgs(call, {"angle"}, scope);
+    if (a.has("start"))
+      throw std::runtime_error("rotate_extrude: start= not yet supported");
+    auto n = std::make_shared<RotateExtrudeNode>();
+    n->angle = a.num("angle", 360.0);
+    n->children = execChildren(call, scope);
+    return n;
+  }
 
   if (m == "translate") {
     Args a = bindArgs(call, {"v"}, scope);
