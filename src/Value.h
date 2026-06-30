@@ -7,22 +7,30 @@
 #include <vector>
 
 struct Value {
-  enum class Type { Undef, Number, Bool, Vector };
+  enum class Type { Undef, Number, Bool, Vector, String };
   Type type = Type::Undef;
   double num = 0.0;
   bool boolean = false;
   std::vector<Value> vec;
+  std::string str;
 
   Value() = default;
 
   static Value makeNumber(double d) { Value v; v.type = Type::Number; v.num = d; return v; }
   static Value makeBool(bool b)     { Value v; v.type = Type::Bool;   v.boolean = b; return v; }
   static Value makeVector(std::vector<Value> xs) { Value v; v.type = Type::Vector; v.vec = std::move(xs); return v; }
+  static Value makeString(std::string s) { Value v; v.type = Type::String; v.str = std::move(s); return v; }
 
   bool isUndef()  const { return type == Type::Undef; }
   bool isNumber() const { return type == Type::Number; }
   bool isBool()   const { return type == Type::Bool; }
   bool isVector() const { return type == Type::Vector; }
+  bool isString() const { return type == Type::String; }
+
+  std::string asString() const {
+    if (type == Type::String) return str;
+    throw std::runtime_error("expected a string, got " + typeName());
+  }
 
   double asNumber() const {
     if (type == Type::Number) return num;
@@ -35,6 +43,7 @@ struct Value {
       case Type::Bool: return boolean;
       case Type::Number: return num != 0.0;
       case Type::Vector: return !vec.empty();
+      case Type::String: return !str.empty();
       case Type::Undef: return false;
     }
     return false;
@@ -58,6 +67,7 @@ struct Value {
       case Type::Number: return "number";
       case Type::Bool: return "bool";
       case Type::Vector: return "vector";
+      case Type::String: return "string";
     }
     return "?";
   }

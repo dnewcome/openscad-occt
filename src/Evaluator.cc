@@ -75,6 +75,7 @@ Value evalExpr(const Expr* e, const Scope& scope) {
   switch (e->kind) {
     case Expr::Kind::Number: return Value::makeNumber(static_cast<const NumberExpr*>(e)->value);
     case Expr::Kind::Bool:   return Value::makeBool(static_cast<const BoolExpr*>(e)->value);
+    case Expr::Kind::String: return Value::makeString(static_cast<const StringExpr*>(e)->value);
     case Expr::Kind::Ident:  return evalIdent(static_cast<const IdentExpr*>(e), scope);
     case Expr::Kind::Unary:  return evalUnary(static_cast<const UnaryExpr*>(e), scope);
     case Expr::Kind::Binary: return evalBinary(static_cast<const BinaryExpr*>(e), scope);
@@ -234,12 +235,22 @@ NodePtr buildTransform(const CallStmt& call, Scope& scope) {
     return n;
   }
 
-  // fillet(r) / round(r): round all edges of the children by radius r.
+  // fillet(r, edges="all"|"convex"|"concave") / round(...): round selected edges
+  // of the children by radius r. The `edges` selector is a declarative query over
+  // topology (evaluated against the built solid), not a stateful pick.
   // (No OpenSCAD equivalent -- this is the B-Rep feature layer.)
   if (m == "fillet" || m == "round") {
-    Args a = bindArgs(call, {"r"}, scope);
+    Args a = bindArgs(call, {"r", "edges"}, scope);
     auto n = std::make_shared<FilletNode>();
     n->r = a.num("r", 1.0);
+    if (a.has("edges")) {
+      std::string sel = a.get("edges").asString();
+      if (sel == "all") n->sel = FilletNode::Sel::All;
+      else if (sel == "convex") n->sel = FilletNode::Sel::Convex;
+      else if (sel == "concave") n->sel = FilletNode::Sel::Concave;
+      else throw std::runtime_error("fillet(): unknown edges selector \"" + sel +
+                                    "\" (expected \"all\", \"convex\" or \"concave\")");
+    }
     n->children = execChildren(call, scope);
     return n;
   }

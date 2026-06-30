@@ -1,6 +1,7 @@
 #include "Kernel.h"
 
 #include <cmath>
+#include <memory>
 #include <stdexcept>
 
 #include <gp_Ax1.hxx>
@@ -21,6 +22,10 @@
 #include <BRepBuilderAPI_GTransform.hxx>
 #include <BRepBuilderAPI_Transform.hxx>
 #include <BRepFilletAPI_MakeFillet.hxx>
+#include <BRepOffset_Analyse.hxx>
+#include <BRepOffset_Interval.hxx>
+#include <BRepOffset_ListOfInterval.hxx>
+#include <ChFiDS_TypeOfConcavity.hxx>
 #include <Standard_Failure.hxx>
 #include <TopExp.hxx>
 #include <TopTools_IndexedMapOfShape.hxx>
@@ -116,9 +121,32 @@ TopoDS_Shape makeFillet(const FilletNode& n) {
   TopTools_IndexedMapOfShape edges;
   TopExp::MapShapes(s, TopAbs_EDGE, edges);  // indexed map dedupes shared edges
   if (edges.IsEmpty()) return s;
+
+  // The declarative query: keep an edge iff it matches the selector. For non-"all"
+  // selectors we use OCCT's own convex/concave analyser (the classifier its fillet
+  // and offset code rely on) rather than a hand-rolled, orientation-fragile test.
+  std::unique_ptr<BRepOffset_Analyse> analyse;
+  if (n.sel != FilletNode::Sel::All)
+    analyse = std::make_unique<BRepOffset_Analyse>(s, /*angleTol=*/0.01);
+
+  auto wanted = [&](const TopoDS_Edge& e) -> bool {
+    if (n.sel == FilletNode::Sel::All) return true;
+    const BRepOffset_ListOfInterval& iv = analyse->Type(e);
+    if (iv.IsEmpty()) return false;
+    ChFiDS_TypeOfConcavity t = iv.First().Type();
+    return (n.sel == FilletNode::Sel::Convex)  ? (t == ChFiDS_Convex)
+         : (n.sel == FilletNode::Sel::Concave) ? (t == ChFiDS_Concave)
+                                               : false;
+  };
+
   try {
     BRepFilletAPI_MakeFillet mf(s);
-    for (int i = 1; i <= edges.Extent(); ++i) mf.Add(n.r, TopoDS::Edge(edges(i)));
+    int added = 0;
+    for (int i = 1; i <= edges.Extent(); ++i) {
+      TopoDS_Edge e = TopoDS::Edge(edges(i));
+      if (wanted(e)) { mf.Add(n.r, e); ++added; }
+    }
+    if (added == 0) return s;  // nothing matched -> pass the solid through unchanged
     mf.Build();
     if (!mf.IsDone()) throw std::runtime_error("fillet: OCCT could not build the blend");
     return mf.Shape();

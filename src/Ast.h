@@ -6,7 +6,7 @@
 
 // ---- Expressions ----
 struct Expr {
-  enum class Kind { Number, Bool, Vector, Ident, Unary, Binary };
+  enum class Kind { Number, Bool, String, Vector, Ident, Unary, Binary };
   Kind kind;
   explicit Expr(Kind k) : kind(k) {}
   virtual ~Expr() = default;
@@ -20,6 +20,10 @@ struct NumberExpr : Expr {
 struct BoolExpr : Expr {
   bool value;
   explicit BoolExpr(bool v) : Expr(Kind::Bool), value(v) {}
+};
+struct StringExpr : Expr {
+  std::string value;
+  explicit StringExpr(std::string v) : Expr(Kind::String), value(std::move(v)) {}
 };
 struct VectorExpr : Expr {
   std::vector<ExprPtr> elems;

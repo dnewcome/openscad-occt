@@ -123,6 +123,7 @@ class Parser {
 
   ExprPtr parsePrimary() {
     if (at(Tok::Number)) return std::make_unique<NumberExpr>(advance().num);
+    if (at(Tok::String)) return std::make_unique<StringExpr>(advance().text);
     if (at(Tok::Ident)) {
       const std::string& name = cur().text;
       if (name == "true")  { advance(); return std::make_unique<BoolExpr>(true); }

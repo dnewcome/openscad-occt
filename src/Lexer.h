@@ -3,7 +3,7 @@
 #include <vector>
 
 enum class Tok {
-  End, Number, Ident,
+  End, Number, Ident, String,
   LParen, RParen, LBrace, RBrace, LBracket, RBracket,
   Comma, Semicolon, Equal,
   Plus, Minus, Star, Slash, Bang
@@ -11,7 +11,7 @@ enum class Tok {
 
 struct Token {
   Tok kind = Tok::End;
-  std::string text;   // identifier name / raw number text
+  std::string text;   // identifier name / string contents / raw number text
   double num = 0.0;   // value when kind == Number
   int line = 1;
 };

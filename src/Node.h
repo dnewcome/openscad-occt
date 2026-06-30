@@ -72,6 +72,6 @@ struct BooleanNode : Node {  // Union / Difference / Intersection / Group
 // Convex / datum-relative / predicate selection without changing this node shape.
 struct FilletNode : Node {
   double r = 1.0;
-  enum class Sel { All } sel = Sel::All;
+  enum class Sel { All, Convex, Concave } sel = Sel::All;
   FilletNode() : Node(NodeKind::Fillet) {}
 };

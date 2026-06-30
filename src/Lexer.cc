@@ -37,6 +37,32 @@ std::vector<Token> tokenize(const std::string& src) {
       continue;
     }
 
+    // String literals "..." with \" \\ \n \t escapes.
+    if (c == '"') {
+      ++i;
+      std::string s;
+      while (i < n && src[i] != '"') {
+        char d = src[i++];
+        if (d == '\\' && i < n) {
+          char e = src[i++];
+          switch (e) {
+            case 'n': s += '\n'; break;
+            case 't': s += '\t'; break;
+            case '"': s += '"'; break;
+            case '\\': s += '\\'; break;
+            default: s += e; break;
+          }
+        } else {
+          if (d == '\n') ++line;
+          s += d;
+        }
+      }
+      if (i >= n) throw std::runtime_error("lex error: unterminated string on line " + std::to_string(line));
+      ++i;  // closing quote
+      out.push_back(Token{Tok::String, s, 0.0, line});
+      continue;
+    }
+
     // Numbers: digits with optional fraction/exponent, or a leading '.'.
     if (std::isdigit((unsigned char)c) || (c == '.' && i + 1 < n && std::isdigit((unsigned char)src[i + 1]))) {
       size_t start = i;
