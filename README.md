@@ -17,8 +17,17 @@ Why OCCT:
 | Primitives  | `cube`, `sphere`, `cylinder` (incl. cones via `r1`/`r2`) |
 | Transforms  | `translate`, `rotate` (Euler + axis-angle), `scale`, `mirror` |
 | Booleans    | `union`, `difference`, `intersection` (+ implicit top-level union) |
+| Features    | `fillet(r)` / `round(r)` — exact B-Rep edge rounding of **all** edges (beyond OpenSCAD) |
 | Language    | numbers, vectors, arithmetic (`+ - * /`), `name = expr;`, named/positional args, `$fn` (parsed) |
 | Output      | binary **STL** (tessellated) and **STEP** (exact B-Rep) |
+
+`fillet(r)` is the first rung of a *declarative feature* layer: selection expressed
+as a pure query over topology rather than a stateful pick. Rung 1 is "all edges"
+(no selection). `fillet(2) cube(20)` stays exactly 20mm (in-place, unlike a
+grow-the-part Minkowski) and exports as STEP with exact `CYLINDRICAL_SURFACE` edge
+blends + `SPHERICAL_SURFACE` corner patches. Fillet is *partial* — too large an `r`
+for some face fails, and we surface that rather than emit a wrong shape. Next rungs:
+`edges="convex"`, then datum-relative selection.
 
 Validated: outputs are valid single solids (`BRepCheck_Analyzer` = valid, round-trip
 through OCCT's STEP reader), bounding boxes match reference OpenSCAD, and curved

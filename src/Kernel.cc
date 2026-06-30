@@ -20,6 +20,12 @@
 #include <BRepAlgoAPI_Fuse.hxx>
 #include <BRepBuilderAPI_GTransform.hxx>
 #include <BRepBuilderAPI_Transform.hxx>
+#include <BRepFilletAPI_MakeFillet.hxx>
+#include <Standard_Failure.hxx>
+#include <TopExp.hxx>
+#include <TopTools_IndexedMapOfShape.hxx>
+#include <TopoDS.hxx>
+#include <TopoDS_Edge.hxx>
 
 namespace {
 
@@ -99,6 +105,29 @@ TopoDS_Shape makeMirror(const MirrorNode& n) {
   return applyTrsf(unionOf(n.children), t);
 }
 
+// ---- B-Rep feature layer ----
+// Round all edges of the children by radius r. OCCT builds the exact rolling-ball
+// blend surfaces and the spherical corner patches where filleted edges meet.
+// Fillet is a *partial* operation: too large an r for some face throws -- we
+// surface that honestly rather than producing a silently-wrong shape.
+TopoDS_Shape makeFillet(const FilletNode& n) {
+  TopoDS_Shape s = unionOf(n.children);
+  if (s.IsNull() || n.r <= 0) return s;
+  TopTools_IndexedMapOfShape edges;
+  TopExp::MapShapes(s, TopAbs_EDGE, edges);  // indexed map dedupes shared edges
+  if (edges.IsEmpty()) return s;
+  try {
+    BRepFilletAPI_MakeFillet mf(s);
+    for (int i = 1; i <= edges.Extent(); ++i) mf.Add(n.r, TopoDS::Edge(edges(i)));
+    mf.Build();
+    if (!mf.IsDone()) throw std::runtime_error("fillet: OCCT could not build the blend");
+    return mf.Shape();
+  } catch (const Standard_Failure& e) {
+    throw std::runtime_error(std::string("fillet failed (r=") + std::to_string(n.r) +
+                             " too large for an edge?): " + e.GetMessageString());
+  }
+}
+
 // ---- booleans ----
 TopoDS_Shape makeDifference(const std::vector<NodePtr>& kids) {
   TopoDS_Shape first;
@@ -151,6 +180,7 @@ TopoDS_Shape buildShape(const Node& node) {
     case NodeKind::Rotate:    return makeRotate(static_cast<const RotateNode&>(node));
     case NodeKind::Scale:     return makeScale(static_cast<const ScaleNode&>(node));
     case NodeKind::Mirror:    return makeMirror(static_cast<const MirrorNode&>(node));
+    case NodeKind::Fillet:    return makeFillet(static_cast<const FilletNode&>(node));
     case NodeKind::Union:
     case NodeKind::Group:        return unionOf(node.children);
     case NodeKind::Difference:   return makeDifference(node.children);

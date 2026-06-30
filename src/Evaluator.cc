@@ -233,6 +233,16 @@ NodePtr buildTransform(const CallStmt& call, Scope& scope) {
     n->children = execChildren(call, scope);
     return n;
   }
+
+  // fillet(r) / round(r): round all edges of the children by radius r.
+  // (No OpenSCAD equivalent -- this is the B-Rep feature layer.)
+  if (m == "fillet" || m == "round") {
+    Args a = bindArgs(call, {"r"}, scope);
+    auto n = std::make_shared<FilletNode>();
+    n->r = a.num("r", 1.0);
+    n->children = execChildren(call, scope);
+    return n;
+  }
   return nullptr;
 }
 

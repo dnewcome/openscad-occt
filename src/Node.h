@@ -8,6 +8,7 @@ enum class NodeKind {
   Cube, Sphere, Cylinder,          // 3D primitives
   Translate, Rotate, Scale, Mirror,// transforms
   Union, Difference, Intersection, // booleans
+  Fillet,                          // B-Rep edge rounding (beyond OpenSCAD)
   Group                            // implicit union of children
 };
 
@@ -64,4 +65,13 @@ struct MirrorNode : Node {  // reflect across plane through origin with this nor
 
 struct BooleanNode : Node {  // Union / Difference / Intersection / Group
   explicit BooleanNode(NodeKind k) : Node(k) {}
+};
+
+// Round edges of the (union of) children. The selector is the declarative query
+// over which the fillet applies: rung 1 is All (no selection); later rungs add
+// Convex / datum-relative / predicate selection without changing this node shape.
+struct FilletNode : Node {
+  double r = 1.0;
+  enum class Sel { All } sel = Sel::All;
+  FilletNode() : Node(NodeKind::Fillet) {}
 };
