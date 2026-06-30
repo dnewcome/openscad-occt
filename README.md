@@ -71,3 +71,33 @@ Run the sample suite:
 ```sh
 ./tests/run.sh
 ```
+
+## Verification against the OpenSCAD corpus
+
+We verify differentially against OpenSCAD's own ~580-file `.scad` test corpus and
+the reference `openscad` binary. Their golden PNG/STL outputs are kernel-specific
+and *not* reused; instead we compare kernel-invariant properties (bounding box;
+later volume/topology) between `oscad` (OCCT) and `openscad`. Curved surfaces
+diverge slightly because OCCT is exact while OpenSCAD facets — a small delta is
+expected; a large one is a real bug (this is how the `cylinder` d-vs-r precedence
+bug was caught).
+
+```sh
+./tests/fetch-corpus.sh      # downloads corpus to tests/corpus/ (git-ignored, GPL)
+./tests/verify-corpus.sh     # differential bbox gate; nonzero exit on a real mismatch
+```
+
+The corpus is fetched on demand and git-ignored (OpenSCAD is GPL-2.0+; keeping it
+out of this tree preserves clean-room separation). The runner auto-skips files that
+use not-yet-implemented features and reports the rest as a scoreboard:
+
+```
+in-scope files        : 53      # use only currently-supported features
+  matched reference   : 32      # bbox agrees with openscad (8 OCCT-exact on curves)
+  unimplemented gaps  : 21      # modifiers * ! # %, include/use, nan/inf, ...
+  bbox MISMATCH       : 0
+```
+
+As each milestone lands, shrink the `UNSUP` feature regex in `verify-corpus.sh`
+and the in-scope count grows — the corpus doubles as a feature-completeness
+scoreboard.

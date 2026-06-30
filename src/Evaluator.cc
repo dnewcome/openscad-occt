@@ -157,11 +157,13 @@ NodePtr buildPrimitive(const CallStmt& call, const Scope& scope) {
     Args a = bindArgs(call, {"h", "r1", "r2"}, scope);
     auto n = std::make_shared<CylinderNode>();
     n->h = a.num("h", 1.0);
-    double r = a.num("r", a.has("d") ? a.get("d").asNumber() / 2.0 : 1.0);
-    n->r1 = a.has("r1") ? a.get("r1").asNumber()
-                        : (a.has("d1") ? a.get("d1").asNumber() / 2.0 : r);
-    n->r2 = a.has("r2") ? a.get("r2").asNumber()
-                        : (a.has("d2") ? a.get("d2").asNumber() / 2.0 : r);
+    // OpenSCAD precedence: diameter overrides radius; d1/d2 override r1/r2,
+    // which in turn fall back to the base r/d.
+    double r = a.has("d") ? a.get("d").asNumber() / 2.0 : a.num("r", 1.0);
+    n->r1 = a.has("d1") ? a.get("d1").asNumber() / 2.0
+                        : (a.has("r1") ? a.get("r1").asNumber() : r);
+    n->r2 = a.has("d2") ? a.get("d2").asNumber() / 2.0
+                        : (a.has("r2") ? a.get("r2").asNumber() : r);
     n->center = a.getOr("center", Value::makeBool(false)).asBool();
     auto fn = scope.find("$fn");
     n->fn = (fn != scope.end() && fn->second.isNumber()) ? (int)fn->second.num : 0;
