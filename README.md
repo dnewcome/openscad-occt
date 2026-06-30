@@ -10,6 +10,10 @@ Why OCCT:
 - **STEP/IGES export** — exact solids for real CAD interoperability.
 - **Boolean robustness** — exact B-Rep booleans, no mesh coplanarity / non-manifold artifacts.
 
+> **See it in action:** **[examples/](examples/)** — a bracket, flange, pulley and
+> hex standoff, each an exact STEP solid (cones, tori, cylinders — not triangles), two
+> with declarative fillets OpenSCAD can't express.
+>
 > **Design rationale, conceptual findings, and an honest viability read:**
 > see **[DESIGN.md](DESIGN.md)** — the "why" behind this (the empty *declarative ×
 > B-Rep* quadrant, why fillet isn't pure CSG, selection-as-query, where the ceiling is).
