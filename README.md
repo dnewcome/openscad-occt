@@ -10,6 +10,10 @@ Why OCCT:
 - **STEP/IGES export** — exact solids for real CAD interoperability.
 - **Boolean robustness** — exact B-Rep booleans, no mesh coplanarity / non-manifold artifacts.
 
+> **Design rationale, conceptual findings, and an honest viability read:**
+> see **[DESIGN.md](DESIGN.md)** — the "why" behind this (the empty *declarative ×
+> B-Rep* quadrant, why fillet isn't pure CSG, selection-as-query, where the ceiling is).
+
 ## Status — Milestone 1 (core CSG) ✅
 
 | Area        | Supported |
