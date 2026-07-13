@@ -67,6 +67,16 @@ quadrant problem above, not because OCCT demands it.
    later shell/draft) take a *predicate over topology* (`edges="convex"`), evaluated
    against the freshly-built solid. This is the bridge that makes derived-feature
    reference declarative.
+5. **Modules are values (shape + frames), not macros — and the language is a strict
+   superset.** OpenSCAD `module`s are textual macros that emit geometry into the ambient
+   transform; they return nothing, so a subassembly can't publish *where its features
+   are*. We instead make an instantiated module a **part value** = `(shape, named
+   frames)`. Called as a bare statement it emits its shape exactly as OpenSCAD does — the
+   frames ride along, invisible — so every valid OpenSCAD program in the implemented
+   subset keeps its exact meaning. Frames and the `attach`/`place` operators are
+   *additive, opt-in* syntax old files never touch (the TypeScript-over-JavaScript move).
+   Copying OpenSCAD's macro-module would foreclose all of this, so we design
+   modules-as-values from the start.
 
 ---
 
@@ -87,6 +97,19 @@ predicate ("convex edges", "edges on the top face") re-evaluates against freshly
 geometry on every rebuild. There's no stale interactive pick to break, so it sidesteps
 much of CAD's notorious *topological-naming problem*. Declarative selection can be
 *more* parametrically stable than the feature tree it competes with.
+
+**Local origins / assembly are the *constructive dual* of selection.** OpenSCAD's
+most-felt limitation — no local origin for a subassembly, no way to mate part B onto a
+feature of part A without replaying A's internal transform arithmetic at the call site —
+shares a root cause with the fillet-selection problem: geometry is opaque and transforms
+flow only top-down, so you can never *address a derived feature*. Selection asks "which
+sub-topology do I **operate on**?"; a datum/frame asks "which sub-topology do I **measure
+a coordinate system from, and mate to**?" Both are pure queries over B-Rep topology.
+B-Rep makes the datum *exact*: a planar face carries a real plane + normal + centroid, so
+its frame is derivable — where BOSL2's anchors are recomputed from each primitive's
+*declared bounding dimensions* because a mesh has no faces to anchor to. Mating is then
+one `gp_Trsf` coinciding two frames, re-resolved on every rebuild — declarative assembly
+by geometric predicate, the positioning face of the same query model as selection.
 
 **Total vs partial operations.** `hull`/`minkowski`/`offset` are *total* — always
 defined, never fail. B-Rep `fillet`/`loft`/`blend` are *partial* — they fail on tight
@@ -139,6 +162,7 @@ touching the language layer. ~1k lines total.
 | Transforms    | `translate`, `rotate` (Euler + axis-angle), `scale`, `mirror` |
 | Booleans      | `union`, `difference`, `intersection` — 2D (faces-with-holes) and 3D |
 | **Features**  | **`fillet(r, edges="all"\|"convex"\|"concave")`** — exact B-Rep edge rounding |
+| **Assembly**  | **`attach(on=…[, from=…]) { parent; child… }`** — seat children onto a queried face by exact datum frames |
 | Language      | numbers, vectors, strings, arithmetic, `name = expr;`, named/positional args, `$fn` |
 | Output        | binary **STL** (tessellated) + **STEP** (exact B-Rep) |
 
@@ -152,6 +176,12 @@ Evidence the thesis holds:
 - On a step solid (convex outer edges + one reentrant concave edge),
   `edges="convex"` and `edges="concave"` **exactly partition** the filletable edges
   (21 + 1 = 22 blends) — declarative selection working in code.
+- `attach(on="top") { cube([40,40,10]); cylinder(h=12,r=8); }` seats the boss so its
+  cap centroid lands on the plate-top centroid with a **0.0e0 gap** (double precision) —
+  the constructive dual of selection, working in code. Positioning carries no global
+  coordinate arithmetic: bump the plate to 25 mm thick and the boss follows to z=25
+  automatically. Partial, like fillet: a cylinder onto a wall (no planar side face)
+  fails loud rather than faking the seat.
 
 ---
 
@@ -227,8 +257,17 @@ Near-term, by leverage:
   declarative-query ladder; the real test of the thesis.
 - **`hull()`** — exact for polyhedral/2D inputs, faceted fallback for curved; the
   idiom MCAD lacks.
+- **Frames / datums + `attach`/`place`, and user `module`s as *values*** — the fix for
+  OpenSCAD's no-local-origin gripe (§3.5, §4). Build order that de-risks the novel part
+  first: **(1) DONE** — `attach(on=…[, from=…]) { parent; child… }` derives a frame from a
+  queried face and coincides two solids with one `gp_Trsf` (exact, 0-gap, verified in
+  STEP); a transform-module surface, so it works on inline children *today*, before user
+  modules land. Remaining: (2) user `module`/`function` + `children`, an instantiated
+  module returning a part-value (so a named `bracket()` can publish frames); (3) `frame`
+  declarations inside modules → real named subassemblies; plus `spin=`/offset controls
+  and datum disambiguation when several faces face the same way.
 - **User `module` / `function`, `for`, `if`** — unlocks a large fraction of the
-  remaining corpus.
+  remaining corpus (item above makes modules carry frames from day one).
 - **`twist` / `scale` `linear_extrude`, `start` `rotate_extrude`** — currently fail
   loud; need `ThruSections`/sweep machinery.
 - **Stronger verification invariants** — volume + manifold/closed-solid checks, not

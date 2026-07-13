@@ -2,6 +2,7 @@
 // CSG node tree: the resolved geometric program, independent of any kernel.
 // The Evaluator produces this from the AST; the Kernel turns it into geometry.
 #include <memory>
+#include <string>
 #include <vector>
 
 enum class NodeKind {
@@ -11,6 +12,7 @@ enum class NodeKind {
   Translate, Rotate, Scale, Mirror,// transforms
   Union, Difference, Intersection, // booleans
   Fillet,                          // B-Rep edge rounding (beyond OpenSCAD)
+  Attach,                          // seat children onto a queried face (frames/datums)
   Group                            // implicit union of children
 };
 
@@ -106,4 +108,17 @@ struct FilletNode : Node {
   double r = 1.0;
   enum class Sel { All, Convex, Concave } sel = Sel::All;
   FilletNode() : Node(NodeKind::Fillet) {}
+};
+
+// Assembly by datum frames -- the constructive dual of fillet's selection query.
+// The FIRST child is the parent; the rest are seated onto the parent's `on` face by
+// coinciding datum frames (centroid + outward normal), derived exactly from the
+// B-Rep faces. `on`/`from` name a face by its outward-normal direction word
+// (top|bottom|left|right|front|back); `from` defaults to the opposite of `on`, so a
+// child seats bottom-onto-top by default. Faces are re-queried against the freshly
+// built solids each rebuild -- a pure query, never a stateful pick.
+struct AttachNode : Node {
+  std::string on = "top";  // which parent face provides the frame
+  std::string from;        // which child face mates (empty => opposite of `on`)
+  AttachNode() : Node(NodeKind::Attach) {}
 };

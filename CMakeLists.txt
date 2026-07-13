@@ -27,6 +27,11 @@ add_executable(smoke_occt tests/smoke_occt.cc)
 target_include_directories(smoke_occt PRIVATE ${OpenCASCADE_INCLUDE_DIR})
 target_link_libraries(smoke_occt PRIVATE ${OCCT_LIBS})
 
+# Frames/datums mechanic proof -- exact face-to-face mate from a topology query (no lang).
+add_executable(frame_smoke tests/frame_smoke.cc)
+target_include_directories(frame_smoke PRIVATE ${OpenCASCADE_INCLUDE_DIR})
+target_link_libraries(frame_smoke PRIVATE ${OCCT_LIBS})
+
 # The interpreter.
 add_executable(oscad
   src/main.cc

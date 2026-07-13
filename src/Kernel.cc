@@ -6,8 +6,10 @@
 
 #include <gp_Ax1.hxx>
 #include <gp_Ax2.hxx>
+#include <gp_Ax3.hxx>
 #include <gp_Dir.hxx>
 #include <gp_GTrsf.hxx>
+#include <gp_Pln.hxx>
 #include <gp_Pnt.hxx>
 #include <gp_Trsf.hxx>
 #include <gp_Vec.hxx>
@@ -29,17 +31,23 @@
 #include <BRepAlgoAPI_Fuse.hxx>
 #include <BRepBuilderAPI_GTransform.hxx>
 #include <BRepBuilderAPI_Transform.hxx>
+#include <BRepAdaptor_Surface.hxx>
 #include <BRepFilletAPI_MakeFillet.hxx>
+#include <BRepGProp.hxx>
 #include <BRepOffset_Analyse.hxx>
 #include <BRepOffset_Interval.hxx>
 #include <BRepOffset_ListOfInterval.hxx>
 #include <ChFiDS_TypeOfConcavity.hxx>
+#include <GProp_GProps.hxx>
 #include <Standard_Failure.hxx>
 #include <TopExp.hxx>
+#include <TopExp_Explorer.hxx>
 #include <TopTools_IndexedMapOfShape.hxx>
 #include <TopoDS.hxx>
 #include <TopoDS_Edge.hxx>
+#include <TopoDS_Face.hxx>
 #include <TopoDS_Wire.hxx>
+#include <string>
 
 namespace {
 
@@ -230,6 +238,111 @@ TopoDS_Shape makeFillet(const FilletNode& n) {
   }
 }
 
+// ---- assembly: frames / datums (the constructive dual of selection) ----
+// A datum frame derived from a face: where it is and how it's oriented. Selection
+// asks "which sub-topology do I operate on?"; a frame asks "which sub-topology do I
+// measure a coordinate system from, and mate to?" -- both pure queries over topology.
+struct Frame {
+  gp_Pnt origin;   // face centroid (area centre of mass)
+  gp_Dir normal;   // outward normal (accounts for face orientation)
+  gp_Dir xdir;     // an in-plane reference axis (for the mate's spin)
+  bool   valid = false;
+};
+
+// Exact frame of a PLANAR face. Non-planar faces (cylinders, spheres) yield no datum
+// here -- a v1 limitation, surfaced honestly by attach() rather than approximated.
+Frame frameOfFace(const TopoDS_Face& f) {
+  Frame fr;
+  BRepAdaptor_Surface surf(f, /*restriction=*/Standard_True);
+  if (surf.GetType() != GeomAbs_Plane) return fr;
+  gp_Pln pln = surf.Plane();
+  gp_Dir n = pln.Axis().Direction();
+  if (f.Orientation() == TopAbs_REVERSED) n.Reverse();  // point OUT of the solid
+  GProp_GProps props;
+  BRepGProp::SurfaceProperties(f, props);
+  fr.origin = props.CentreOfMass();
+  fr.normal = n;
+  fr.xdir   = pln.Position().XDirection();  // guaranteed perpendicular to n
+  fr.valid  = true;
+  return fr;
+}
+
+// Query: the planar face of `s` whose outward normal is closest to `want`.
+Frame pickFaceByNormal(const TopoDS_Shape& s, const gp_Dir& want) {
+  Frame best;
+  double bestDot = -2.0;
+  for (TopExp_Explorer ex(s, TopAbs_FACE); ex.More(); ex.Next()) {
+    Frame fr = frameOfFace(TopoDS::Face(ex.Current()));
+    if (!fr.valid) continue;
+    double d = fr.normal.Dot(want);
+    if (d > bestDot) { bestDot = d; best = fr; }
+  }
+  return best;
+}
+
+// Rigid transform seating `child`'s frame onto `base`'s. opposed=true => the two
+// outward normals end up antiparallel (a face-to-face seat, no interpenetration).
+gp_Trsf mateTransform(const Frame& base, const Frame& child, bool opposed) {
+  gp_Dir targetN = opposed ? gp_Dir(base.normal.Reversed()) : base.normal;
+  gp_Ax3 from(child.origin, child.normal, child.xdir);
+  gp_Ax3 to  (base.origin,  targetN,      base.xdir);
+  gp_Trsf t;
+  t.SetDisplacement(from, to);
+  return t;
+}
+
+// Direction words name a face by its outward normal, evaluated per-solid in local
+// coords -- the positioning-side analogue of fillet's edge predicate.
+gp_Dir dirWord(const std::string& w) {
+  if (w == "top")    return gp_Dir(0, 0, 1);
+  if (w == "bottom") return gp_Dir(0, 0, -1);
+  if (w == "right")  return gp_Dir(1, 0, 0);
+  if (w == "left")   return gp_Dir(-1, 0, 0);
+  if (w == "back")   return gp_Dir(0, 1, 0);
+  if (w == "front")  return gp_Dir(0, -1, 0);
+  throw std::runtime_error("attach: unknown face \"" + w +
+                           "\" (expected top|bottom|left|right|front|back)");
+}
+
+std::string oppositeWord(const std::string& w) {
+  if (w == "top")    return "bottom";
+  if (w == "bottom") return "top";
+  if (w == "left")   return "right";
+  if (w == "right")  return "left";
+  if (w == "front")  return "back";
+  if (w == "back")   return "front";
+  throw std::runtime_error("attach: unknown face \"" + w + "\"");
+}
+
+TopoDS_Shape makeAttach(const AttachNode& n) {
+  if (n.children.empty()) return {};
+  TopoDS_Shape parent = buildShape(*n.children[0]);
+  if (parent.IsNull() || n.children.size() == 1) return parent;  // nothing to seat
+
+  constexpr double kFacing = 0.5;  // picked face must clearly face the requested dir
+  gp_Dir onDir = dirWord(n.on);
+  std::string fromWord = n.from.empty() ? oppositeWord(n.on) : n.from;
+  gp_Dir fromDir = dirWord(fromWord);
+
+  Frame pf = pickFaceByNormal(parent, onDir);
+  if (!pf.valid || pf.normal.Dot(onDir) < kFacing)
+    throw std::runtime_error("attach(on=\"" + n.on +
+                             "\"): parent has no planar face clearly facing \"" + n.on + "\"");
+
+  TopoDS_Shape acc = parent;
+  for (size_t i = 1; i < n.children.size(); ++i) {
+    TopoDS_Shape child = buildShape(*n.children[i]);
+    if (child.IsNull()) continue;
+    Frame cf = pickFaceByNormal(child, fromDir);
+    if (!cf.valid || cf.normal.Dot(fromDir) < kFacing)
+      throw std::runtime_error("attach(from=\"" + fromWord +
+                               "\"): a seated child has no planar face facing \"" + fromWord + "\"");
+    TopoDS_Shape placed = applyTrsf(child, mateTransform(pf, cf, /*opposed=*/true));
+    acc = BRepAlgoAPI_Fuse(acc, placed).Shape();
+  }
+  return acc;
+}
+
 // ---- booleans ----
 TopoDS_Shape makeDifference(const std::vector<NodePtr>& kids) {
   TopoDS_Shape first;
@@ -288,6 +401,7 @@ TopoDS_Shape buildShape(const Node& node) {
     case NodeKind::Scale:     return makeScale(static_cast<const ScaleNode&>(node));
     case NodeKind::Mirror:    return makeMirror(static_cast<const MirrorNode&>(node));
     case NodeKind::Fillet:    return makeFillet(static_cast<const FilletNode&>(node));
+    case NodeKind::Attach:    return makeAttach(static_cast<const AttachNode&>(node));
     case NodeKind::Union:
     case NodeKind::Group:        return unionOf(node.children);
     case NodeKind::Difference:   return makeDifference(node.children);

@@ -322,6 +322,20 @@ NodePtr buildTransform(const CallStmt& call, Scope& scope) {
     n->children = execChildren(call, scope);
     return n;
   }
+
+  // attach(on="top" [, from=...]) { parent; children... }: seat the children onto the
+  // parent's (first child's) queried face by coinciding datum frames. Faces are named
+  // by outward-normal direction word and re-resolved against the freshly-built solids
+  // -- a pure topology query, the constructive dual of fillet's edge selection.
+  // (No OpenSCAD equivalent -- this is the frames/datums layer.)
+  if (m == "attach") {
+    Args a = bindArgs(call, {"on", "from"}, scope);
+    auto n = std::make_shared<AttachNode>();
+    if (a.has("on"))   n->on = a.get("on").asString();
+    if (a.has("from")) n->from = a.get("from").asString();
+    n->children = execChildren(call, scope);
+    return n;
+  }
   return nullptr;
 }
 

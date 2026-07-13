@@ -28,6 +28,7 @@ Why OCCT:
 | Transforms  | `translate`, `rotate` (Euler + axis-angle), `scale`, `mirror` |
 | Booleans    | `union`, `difference`, `intersection` — 2D (faces-with-holes) and 3D |
 | Features    | `fillet(r, edges="all"\|"convex"\|"concave")` / `round(...)` — exact B-Rep edge rounding (beyond OpenSCAD) |
+| Assembly    | `attach(on=…[, from=…]) { parent; child… }` — seat children onto a queried face by exact datum frames (beyond OpenSCAD) |
 | Language    | numbers, vectors, strings, arithmetic (`+ - * /`), `name = expr;`, named/positional args, `$fn` (parsed) |
 | Output      | binary **STL** (tessellated) and **STEP** (exact B-Rep) |
 
@@ -42,6 +43,19 @@ its fillet/offset code relies on). On a step solid, `"convex"` and `"concave"`
 exactly partition the filletable edges. Fillet is *partial* — too large an `r` for
 some face fails, and we surface that rather than emit a wrong shape. Next rungs:
 datum-relative selection, then arbitrary predicates.
+
+`attach` is the *declarative assembly* layer — the **constructive dual** of `fillet`'s
+selection. Where selection asks "which sub-topology do I *operate on*?", a datum asks
+"which sub-topology do I *measure a frame from, and mate to*?" `attach(on="top") { plate;
+boss; }` seats the boss's face onto the plate's top face by coinciding two frames derived
+*exactly* from the B-Rep faces (centroid + outward normal), with **no global coordinate
+arithmetic** — change the plate thickness and the boss follows the top face. This is
+OpenSCAD's most-felt gap (no local origin for a subassembly): there you'd hand-replay the
+parent's transforms at the call site; here positioning is a pure query over topology,
+re-resolved each rebuild. Faces are named by outward-normal word
+(`top|bottom|left|right|front|back`); `from` defaults to the opposite of `on`. Like
+fillet, `attach` is *partial* and **fails loud** — a cylinder has no planar face to seat
+flat against a wall, so it says so rather than faking a mate.
 
 Validated: outputs are valid single solids (`BRepCheck_Analyzer` = valid, round-trip
 through OCCT's STEP reader), bounding boxes match reference OpenSCAD, and curved
