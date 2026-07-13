@@ -270,9 +270,13 @@ Near-term, by leverage:
   remaining corpus (item above makes modules carry frames from day one).
 - **`twist` / `scale` `linear_extrude`, `start` `rotate_extrude`** — currently fail
   loud; need `ThruSections`/sweep machinery.
-- **Stronger verification invariants** — volume + manifold/closed-solid checks, not
-  just bbox (catches bugs that don't move the bounding box, e.g. a wrong internal
-  cavity).
+- **Stronger verification invariants** — bbox is joined by `tests/step_check` (reads a
+  STEP, runs `BRepCheck_Analyzer` → `brep_valid`/solid/shell counts); all six examples
+  pass. Still want volume checks. Note the distinction it surfaced: **B-Rep validity ≠
+  STL watertightness** — a valid solid with *spherical* fillet corners meshes to a
+  non-watertight STL (OCCT tessellates faces independently → T-junctions where three
+  blends meet at a corner; a single ring/toroidal fillet has none). Healing the STL
+  export (stitched/shared-edge mesh) is future work; the exact B-Rep is unaffected.
 
 Strategic questions to sit with:
 1. How far up the selection ladder do *your* real parts actually need to go?

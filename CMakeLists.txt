@@ -32,6 +32,11 @@ add_executable(frame_smoke tests/frame_smoke.cc)
 target_include_directories(frame_smoke PRIVATE ${OpenCASCADE_INCLUDE_DIR})
 target_link_libraries(frame_smoke PRIVATE ${OCCT_LIBS})
 
+# Exact B-Rep validity checker -- reads a STEP, runs BRepCheck (validity != watertight STL).
+add_executable(step_check tests/step_check.cc)
+target_include_directories(step_check PRIVATE ${OpenCASCADE_INCLUDE_DIR})
+target_link_libraries(step_check PRIVATE ${OCCT_LIBS})
+
 # The interpreter.
 add_executable(oscad
   src/main.cc
