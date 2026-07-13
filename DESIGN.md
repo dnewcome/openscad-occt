@@ -67,16 +67,30 @@ quadrant problem above, not because OCCT demands it.
    later shell/draft) take a *predicate over topology* (`edges="convex"`), evaluated
    against the freshly-built solid. This is the bridge that makes derived-feature
    reference declarative.
-5. **Modules are values (shape + frames), not macros — and the language is a strict
-   superset.** OpenSCAD `module`s are textual macros that emit geometry into the ambient
-   transform; they return nothing, so a subassembly can't publish *where its features
-   are*. We instead make an instantiated module a **part value** = `(shape, named
-   frames)`. Called as a bare statement it emits its shape exactly as OpenSCAD does — the
-   frames ride along, invisible — so every valid OpenSCAD program in the implemented
-   subset keeps its exact meaning. Frames and the `attach`/`place` operators are
-   *additive, opt-in* syntax old files never touch (the TypeScript-over-JavaScript move).
-   Copying OpenSCAD's macro-module would foreclose all of this, so we design
-   modules-as-values from the start.
+5. **Modules: macro or value? (open — the paradigm question.)** OpenSCAD `module`s are
+   macros that *emit* geometry; `function`s return values; geometry is never a value you
+   can bind or pass. Frames press on this. Three live options, cost rising:
+   - **(b) query at the call site** — `attach` introspects its first child's *built*
+     geometry, so datum-relative assembly works on plain macro modules *today*, no change
+     (a face query doesn't care whether the solid came from a primitive or a module). But
+     the consumer must name faces by topology (`the +Z face`), which leaks the module's
+     internals and can't name a datum that isn't on a face.
+   - **(c) modules annotate their output** — a new opt-in `datum("mount", …)` statement
+     registers a *named* frame on the geometry a macro emits; consumers reference it by
+     name (`attach(to=…"mount")`). Geometry gains an optional name→frame side-table but
+     stays non-assignable — so this buys **encapsulation** (a stable datum interface,
+     decoupled from internal topology) and **off-face datums** (a point/axis computed
+     inside the module) with **no paradigm change**. The dark-horse middle path.
+   - **(d) modules-as-values** — geometry becomes a first-class value; `module`/`function`
+     merge; parts go in lists, frames get algebra. Maximum power, but this *is* the
+     paradigm shift (drifts toward JSCAD / build123d ergonomics).
+   Deciding questions: do real parts need datums **not on a face** (a bolt-circle centre,
+   a point offset along a normal)? Do consumers need **encapsulation** (name a datum
+   without knowing the topology)? Do you want **frame algebra** as user-visible values?
+   "No" to all → (b). "Encapsulation / off-face datums, but keep the paradigm" → (c).
+   "Yes, and I want geometry-as-data" → (d). Every option stays a strict superset of
+   OpenSCAD. Current lean: (b) now, (c) when a real part needs a named/off-face datum,
+   (d) only as a deliberate identity choice — still genuinely undecided.
 
 ---
 
@@ -262,12 +276,15 @@ Near-term, by leverage:
   first: **(1) DONE** — `attach(on=…[, from=…]) { parent; child… }` derives a frame from a
   queried face and coincides two solids with one `gp_Trsf` (exact, 0-gap, verified in
   STEP); a transform-module surface, so it works on inline children *today*, before user
-  modules land. Remaining: (2) user `module`/`function` + `children`, an instantiated
-  module returning a part-value (so a named `bracket()` can publish frames); (3) `frame`
-  declarations inside modules → real named subassemblies; plus `spin=`/offset controls
-  and datum disambiguation when several faces face the same way.
+  modules land. Remaining (see §3.5, the macro/value question is open): (2) plain
+  macro-style user `module`/`function` + `children` — `attach` then resolves datum faces
+  on their output for free (option **b**), no paradigm change; (3) *named* datums via a
+  `datum(...)` annotation (option **c**) if a real part needs an off-face or encapsulated
+  datum; plus attach `spin=`/offset controls and disambiguation when several faces point
+  the same way. Modules-as-values (**d**) stays parked pending the deciding questions.
 - **User `module` / `function`, `for`, `if`** — unlocks a large fraction of the
-  remaining corpus (item above makes modules carry frames from day one).
+  remaining corpus; stays macro-style (OpenSCAD paradigm intact), and `attach` queries
+  their built output so datum-relative assembly on modules comes for free.
 - **`twist` / `scale` `linear_extrude`, `start` `rotate_extrude`** — currently fail
   loud; need `ThruSections`/sweep machinery.
 - **Stronger verification invariants** — bbox is joined by `tests/step_check` (reads a
