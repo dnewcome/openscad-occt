@@ -5,6 +5,8 @@
 #include <sstream>
 #include <string>
 
+#include <Standard_Failure.hxx>
+
 #include "Evaluator.h"
 #include "Export.h"
 #include "Kernel.h"
@@ -79,8 +81,16 @@ int main(int argc, char** argv) {
       else { std::cerr << "error: STEP write failed\n"; ok = false; }
     }
     return ok ? 0 : 1;
+  } catch (const Standard_Failure& e) {
+    // OCCT throws its own hierarchy (not std::exception) -- catch it so a kernel
+    // failure on awkward geometry is a clean error, never a SIGABRT/core dump.
+    std::cerr << "error: OCCT: " << e.GetMessageString() << "\n";
+    return 1;
   } catch (const std::exception& e) {
     std::cerr << "error: " << e.what() << "\n";
+    return 1;
+  } catch (...) {
+    std::cerr << "error: unrecognized failure\n";
     return 1;
   }
 }

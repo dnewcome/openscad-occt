@@ -87,6 +87,17 @@ std::vector<Token> tokenize(const std::string& src) {
       continue;
     }
 
+    // Two-char operators.
+    if (i + 1 < n) {
+      char d = src[i + 1];
+      if (c == '<' && d == '=') { i += 2; push(Tok::LessEq); continue; }
+      if (c == '>' && d == '=') { i += 2; push(Tok::GreaterEq); continue; }
+      if (c == '=' && d == '=') { i += 2; push(Tok::EqEq); continue; }
+      if (c == '!' && d == '=') { i += 2; push(Tok::NotEq); continue; }
+      if (c == '&' && d == '&') { i += 2; push(Tok::And); continue; }
+      if (c == '|' && d == '|') { i += 2; push(Tok::Or); continue; }
+    }
+
     // Punctuation / operators.
     ++i;
     switch (c) {
@@ -98,11 +109,16 @@ std::vector<Token> tokenize(const std::string& src) {
       case ']': push(Tok::RBracket); break;
       case ',': push(Tok::Comma); break;
       case ';': push(Tok::Semicolon); break;
+      case ':': push(Tok::Colon); break;
+      case '?': push(Tok::Question); break;
       case '=': push(Tok::Equal); break;
       case '+': push(Tok::Plus); break;
       case '-': push(Tok::Minus); break;
       case '*': push(Tok::Star); break;
       case '/': push(Tok::Slash); break;
+      case '%': push(Tok::Percent); break;
+      case '<': push(Tok::Less); break;
+      case '>': push(Tok::Greater); break;
       case '!': push(Tok::Bang); break;
       default:
         throw std::runtime_error("lex error: unexpected character '" + std::string(1, c) +

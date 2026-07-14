@@ -10,7 +10,10 @@ class Parser {
 
   std::vector<StmtPtr> parseProgram() {
     std::vector<StmtPtr> prog;
-    while (!at(Tok::End)) prog.push_back(parseStatement());
+    while (!at(Tok::End)) {
+      if (at(Tok::Semicolon)) { advance(); continue; }  // stray ';'
+      prog.push_back(parseStatement());
+    }
     return prog;
   }
 
@@ -19,7 +22,9 @@ class Parser {
   size_t pos = 0;
 
   const Token& cur() const { return t[pos]; }
+  const Token& peek() const { return t[pos + 1]; }
   bool at(Tok k) const { return t[pos].kind == k; }
+  bool atIdent(const char* s) const { return at(Tok::Ident) && cur().text == s; }
   const Token& advance() { return t[pos++]; }
 
   [[noreturn]] void err(const std::string& msg) const {
@@ -33,9 +38,12 @@ class Parser {
 
   // ---- statements ----
   StmtPtr parseStatement() {
+    if (atIdent("module"))   return parseModuleDef();
+    if (atIdent("function")) return parseFunctionDef();
+    if (atIdent("for"))      return parseFor();
+    if (atIdent("if"))       return parseIf();
     if (!at(Tok::Ident)) err("expected a statement (identifier)");
-    // Lookahead: IDENT '=' is an assignment, IDENT '(' is a module call.
-    if (t[pos + 1].kind == Tok::Equal) return parseAssignment();
+    if (peek().kind == Tok::Equal) return parseAssignment();
     return parseCall();
   }
 
@@ -53,22 +61,24 @@ class Parser {
     s->line = cur().line;
     s->name = advance().text;           // IDENT
     expect(Tok::LParen, "'('");
-    if (!at(Tok::RParen)) {
-      for (;;) {
-        s->args.push_back(parseArg());
-        if (at(Tok::Comma)) { advance(); continue; }
-        break;
-      }
-    }
+    parseArgList(s->args);
     expect(Tok::RParen, "')'");
     parseChild(s->children);
     return s;
   }
 
+  void parseArgList(std::vector<Arg>& out) {
+    if (at(Tok::RParen)) return;
+    for (;;) {
+      out.push_back(parseArg());
+      if (at(Tok::Comma)) { advance(); continue; }
+      break;
+    }
+  }
+
   Arg parseArg() {
     Arg a;
-    // named arg: IDENT '=' expr
-    if (at(Tok::Ident) && t[pos + 1].kind == Tok::Equal) {
+    if (at(Tok::Ident) && peek().kind == Tok::Equal) {  // named: IDENT '=' expr
       a.name = advance().text;
       advance();  // '='
     }
@@ -76,49 +86,169 @@ class Parser {
     return a;
   }
 
-  // A module call's child(ren): ';' (none), a '{...}' block, or a single nested call.
+  std::vector<Param> parseParams() {
+    std::vector<Param> params;
+    expect(Tok::LParen, "'('");
+    if (!at(Tok::RParen)) {
+      for (;;) {
+        Param p;
+        p.name = expect(Tok::Ident, "parameter name").text;
+        if (at(Tok::Equal)) { advance(); p.def = parseExpr(); }
+        params.push_back(std::move(p));
+        if (at(Tok::Comma)) { advance(); continue; }
+        break;
+      }
+    }
+    expect(Tok::RParen, "')'");
+    return params;
+  }
+
+  StmtPtr parseModuleDef() {
+    advance();  // 'module'
+    auto s = std::make_unique<ModuleDefStmt>();
+    s->name = expect(Tok::Ident, "module name").text;
+    s->params = parseParams();
+    parseChild(s->body);
+    return s;
+  }
+
+  StmtPtr parseFunctionDef() {
+    advance();  // 'function'
+    auto s = std::make_unique<FunctionDefStmt>();
+    s->name = expect(Tok::Ident, "function name").text;
+    s->params = parseParams();
+    expect(Tok::Equal, "'='");
+    s->body = parseExpr();
+    expect(Tok::Semicolon, "';'");
+    return s;
+  }
+
+  StmtPtr parseFor() {
+    advance();  // 'for'
+    auto s = std::make_unique<ForStmt>();
+    expect(Tok::LParen, "'('");
+    for (;;) {
+      std::string v = expect(Tok::Ident, "loop variable").text;
+      expect(Tok::Equal, "'='");
+      s->vars.emplace_back(std::move(v), parseExpr());
+      if (at(Tok::Comma)) { advance(); continue; }
+      break;
+    }
+    expect(Tok::RParen, "')'");
+    parseChild(s->body);
+    return s;
+  }
+
+  StmtPtr parseIf() {
+    advance();  // 'if'
+    auto s = std::make_unique<IfStmt>();
+    expect(Tok::LParen, "'('");
+    s->cond = parseExpr();
+    expect(Tok::RParen, "')'");
+    parseChild(s->thenBody);
+    if (atIdent("else")) {
+      advance();
+      parseChild(s->elseBody);
+    }
+    return s;
+  }
+
+  // A body/child: ';' (none), a '{...}' block, or a single nested statement.
   void parseChild(std::vector<StmtPtr>& out) {
     if (at(Tok::Semicolon)) { advance(); return; }
     if (at(Tok::LBrace)) {
       advance();
       while (!at(Tok::RBrace)) {
         if (at(Tok::End)) err("unterminated '{' block");
+        if (at(Tok::Semicolon)) { advance(); continue; }
         out.push_back(parseStatement());
       }
       advance();  // '}'
       return;
     }
-    // single child statement (e.g. translate(...) cube(...);)
     out.push_back(parseStatement());
   }
 
-  // ---- expressions ----
-  ExprPtr parseExpr() { return parseAddSub(); }
+  // ---- expressions (precedence: ternary < || < && < eq < rel < add < mul < unary) ----
+  ExprPtr parseExpr() { return parseTernary(); }
 
+  ExprPtr parseTernary() {
+    ExprPtr c = parseOr();
+    if (at(Tok::Question)) {
+      advance();
+      auto e = std::make_unique<TernaryExpr>();
+      e->cond = std::move(c);
+      e->a = parseExpr();
+      expect(Tok::Colon, "':'");
+      e->b = parseTernary();
+      return e;
+    }
+    return c;
+  }
+
+  ExprPtr parseOr() {
+    ExprPtr l = parseAnd();
+    while (at(Tok::Or)) { advance(); l = std::make_unique<BinaryExpr>(BinOp::Or, std::move(l), parseAnd()); }
+    return l;
+  }
+  ExprPtr parseAnd() {
+    ExprPtr l = parseEquality();
+    while (at(Tok::And)) { advance(); l = std::make_unique<BinaryExpr>(BinOp::And, std::move(l), parseEquality()); }
+    return l;
+  }
+  ExprPtr parseEquality() {
+    ExprPtr l = parseRel();
+    while (at(Tok::EqEq) || at(Tok::NotEq)) {
+      BinOp op = at(Tok::EqEq) ? BinOp::Eq : BinOp::Ne;
+      advance();
+      l = std::make_unique<BinaryExpr>(op, std::move(l), parseRel());
+    }
+    return l;
+  }
+  ExprPtr parseRel() {
+    ExprPtr l = parseAddSub();
+    while (at(Tok::Less) || at(Tok::Greater) || at(Tok::LessEq) || at(Tok::GreaterEq)) {
+      BinOp op = at(Tok::Less) ? BinOp::Lt : at(Tok::Greater) ? BinOp::Gt
+               : at(Tok::LessEq) ? BinOp::Le : BinOp::Ge;
+      advance();
+      l = std::make_unique<BinaryExpr>(op, std::move(l), parseAddSub());
+    }
+    return l;
+  }
   ExprPtr parseAddSub() {
-    ExprPtr lhs = parseMulDiv();
+    ExprPtr l = parseMulDiv();
     while (at(Tok::Plus) || at(Tok::Minus)) {
-      char op = at(Tok::Plus) ? '+' : '-';
+      BinOp op = at(Tok::Plus) ? BinOp::Add : BinOp::Sub;
       advance();
-      lhs = std::make_unique<BinaryExpr>(op, std::move(lhs), parseMulDiv());
+      l = std::make_unique<BinaryExpr>(op, std::move(l), parseMulDiv());
     }
-    return lhs;
+    return l;
   }
-
   ExprPtr parseMulDiv() {
-    ExprPtr lhs = parseUnary();
-    while (at(Tok::Star) || at(Tok::Slash)) {
-      char op = at(Tok::Star) ? '*' : '/';
+    ExprPtr l = parseUnary();
+    while (at(Tok::Star) || at(Tok::Slash) || at(Tok::Percent)) {
+      BinOp op = at(Tok::Star) ? BinOp::Mul : at(Tok::Slash) ? BinOp::Div : BinOp::Mod;
       advance();
-      lhs = std::make_unique<BinaryExpr>(op, std::move(lhs), parseUnary());
+      l = std::make_unique<BinaryExpr>(op, std::move(l), parseUnary());
     }
-    return lhs;
+    return l;
   }
-
   ExprPtr parseUnary() {
     if (at(Tok::Minus)) { advance(); return std::make_unique<UnaryExpr>('-', parseUnary()); }
     if (at(Tok::Bang))  { advance(); return std::make_unique<UnaryExpr>('!', parseUnary()); }
-    return parsePrimary();
+    return parsePostfix();
+  }
+  ExprPtr parsePostfix() {
+    ExprPtr e = parsePrimary();
+    while (at(Tok::LBracket)) {
+      advance();
+      auto ix = std::make_unique<IndexExpr>();
+      ix->base = std::move(e);
+      ix->index = parseExpr();
+      expect(Tok::RBracket, "']'");
+      e = std::move(ix);
+    }
+    return e;
   }
 
   ExprPtr parsePrimary() {
@@ -129,6 +259,14 @@ class Parser {
       if (name == "true")  { advance(); return std::make_unique<BoolExpr>(true); }
       if (name == "false") { advance(); return std::make_unique<BoolExpr>(false); }
       if (name == "undef") { advance(); return std::make_unique<IdentExpr>("undef"); }
+      if (peek().kind == Tok::LParen) {  // function call
+        auto c = std::make_unique<CallExpr>();
+        c->name = advance().text;
+        advance();  // '('
+        parseArgList(c->args);
+        expect(Tok::RParen, "')'");
+        return c;
+      }
       return std::make_unique<IdentExpr>(advance().text);
     }
     if (at(Tok::LParen)) {
@@ -137,20 +275,34 @@ class Parser {
       expect(Tok::RParen, "')'");
       return e;
     }
-    if (at(Tok::LBracket)) {
-      advance();
-      auto v = std::make_unique<VectorExpr>();
-      if (!at(Tok::RBracket)) {
-        for (;;) {
-          v->elems.push_back(parseExpr());
-          if (at(Tok::Comma)) { advance(); continue; }
-          break;
-        }
-      }
-      expect(Tok::RBracket, "']'");
-      return v;
-    }
+    if (at(Tok::LBracket)) return parseBracket();
     err("expected an expression");
+  }
+
+  // '[' -> either a vector literal or a range [start:end] / [start:step:end].
+  ExprPtr parseBracket() {
+    advance();  // '['
+    if (at(Tok::RBracket)) { advance(); return std::make_unique<VectorExpr>(); }
+    ExprPtr first = parseExpr();
+    if (at(Tok::Colon)) {  // range
+      advance();
+      auto r = std::make_unique<RangeExpr>();
+      r->start = std::move(first);
+      ExprPtr second = parseExpr();
+      if (at(Tok::Colon)) { advance(); r->step = std::move(second); r->end = parseExpr(); }
+      else                { r->end = std::move(second); }
+      expect(Tok::RBracket, "']'");
+      return r;
+    }
+    auto v = std::make_unique<VectorExpr>();  // vector literal
+    v->elems.push_back(std::move(first));
+    while (at(Tok::Comma)) {
+      advance();
+      if (at(Tok::RBracket)) break;  // trailing comma
+      v->elems.push_back(parseExpr());
+    }
+    expect(Tok::RBracket, "']'");
+    return v;
   }
 };
 

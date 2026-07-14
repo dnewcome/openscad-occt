@@ -18,7 +18,7 @@ Why OCCT:
 > see **[DESIGN.md](DESIGN.md)** — the "why" behind this (the empty *declarative ×
 > B-Rep* quadrant, why fillet isn't pure CSG, selection-as-query, where the ceiling is).
 
-## Status — Milestone 1 (core CSG) ✅
+## Status — core CSG + 2D + B-Rep features + a real language ✅
 
 | Area        | Supported |
 |-------------|-----------|
@@ -29,7 +29,8 @@ Why OCCT:
 | Booleans    | `union`, `difference`, `intersection` — 2D (faces-with-holes) and 3D |
 | Features    | `fillet(r, edges="all"\|"convex"\|"concave")` / `round(...)` — exact B-Rep edge rounding (beyond OpenSCAD) |
 | Assembly    | `attach(on=…[, from=…]) { parent; child… }` — seat children onto a queried face by exact datum frames (beyond OpenSCAD) |
-| Language    | numbers, vectors, strings, arithmetic (`+ - * /`), `name = expr;`, named/positional args, `$fn` (parsed) |
+| Language    | numbers, vectors, strings, ranges; `+ - * / %`, comparison, `&& \|\|`, ternary `?:`, indexing `[]`; `name = expr;`, named/positional args, `$fn` |
+| Control flow | user `module`/`function` (incl. recursion + `children()`), `for`, `if`/`else`, built-in math (`sin`…`sqrt`, `pow`, `min`, `max`, `len`, `norm`, `cross`) |
 | Output      | binary **STL** (tessellated) and **STEP** (exact B-Rep) |
 
 `fillet` is the *declarative feature* layer: which edges to round is a **pure query
@@ -69,8 +70,9 @@ a tapered cylinder as a `CONICAL_SURFACE`).
 **fail loud** rather than emit a silently-wrong shape.
 
 ### Not yet (future milestones)
-`twist`/`scale` `linear_extrude` and `start` `rotate_extrude`, user modules/functions,
-`for`/`if`, `hull`/`minkowski`/`offset`, `import`, text, and a GL preview GUI.
+list comprehensions (`[for …]`, `let`, `each`), `echo`/`assert`, `twist`/`scale`
+`linear_extrude` and `start` `rotate_extrude`, `hull`/`minkowski`/`offset`, `import`,
+text, and a GL preview GUI.
 
 ## Architecture
 
@@ -134,9 +136,10 @@ out of this tree preserves clean-room separation). The runner auto-skips files t
 use not-yet-implemented features and reports the rest as a scoreboard:
 
 ```
-in-scope files        : 53      # use only currently-supported features
-  matched reference   : 32      # bbox agrees with openscad (8 OCCT-exact on curves)
-  unimplemented gaps  : 21      # modifiers * ! # %, include/use, nan/inf, ...
+in-scope files        : 139     # use only currently-supported features
+  matched reference   : 67      # bbox agrees with openscad (21 OCCT-exact on curves)
+  unimplemented gaps  : 69      # modifiers * ! # %, include/use, list comprehensions, ...
+  expected divergence : 3       # documented allow-list (exact-vs-facet, 2D/3D mixing)
   bbox MISMATCH       : 0
 ```
 

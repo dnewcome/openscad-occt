@@ -177,7 +177,8 @@ touching the language layer. ~1k lines total.
 | Booleans      | `union`, `difference`, `intersection` — 2D (faces-with-holes) and 3D |
 | **Features**  | **`fillet(r, edges="all"\|"convex"\|"concave")`** — exact B-Rep edge rounding |
 | **Assembly**  | **`attach(on=…[, from=…]) { parent; child… }`** — seat children onto a queried face by exact datum frames |
-| Language      | numbers, vectors, strings, arithmetic, `name = expr;`, named/positional args, `$fn` |
+| **Control flow** | user `module`/`function` (recursion + `children()`), `for`, `if`/`else`, built-in math |
+| Language      | numbers, vectors, strings, ranges; arithmetic/comparison/logical/ternary/indexing; `name = expr;`, named/positional args, `$fn` |
 | Output        | binary **STL** (tessellated) + **STEP** (exact B-Rep) |
 
 Evidence the thesis holds:
@@ -214,19 +215,24 @@ tests/verify-corpus.sh   # differential bbox gate + feature-completeness scorebo
 
 Current scoreboard:
 ```
-in-scope files        : 81     # use only currently-supported features
-  matched reference   : 50     # bbox agrees (16 OCCT-exact divergence on curves)
-  unimplemented gaps  : 31     # features not yet built (fail loud)
+in-scope files        : 139    # use only currently-supported features
+  matched reference   : 67     # bbox agrees (21 OCCT-exact divergence on curves)
+  unimplemented gaps  : 69     # features not yet built (fail loud)
+  expected divergence : 3      # documented allow-list (exact-vs-facet, 2D/3D mixing)
   bbox MISMATCH       : 0
 ```
 
 The harness doubles as a completeness meter: each milestone shrinks the `UNSUP`
-feature list and the in-scope/match counts climb (53→81, 32→50 across M1→M2). It has
-already paid for itself, catching real bugs:
+feature list and the in-scope/match counts climb (53→81→139, 32→50→67 across M1→M2→M3).
+It keeps paying for itself, catching real bugs:
 - `cylinder(r=1, d=10)` honored `r` instead of `d` (OpenSCAD: diameter wins).
 - `circle($fn=6)` came out round (`$fn` passed as a per-call arg wasn't read).
-- Four "mismatches" that were unimplemented extrude options (`twist`/`scale`/`start`)
-  silently emitting wrong shapes — now they fail loud.
+- Unimplemented extrude options (`twist`/`scale`/`start`) silently emitting wrong
+  shapes — now they fail loud.
+- **M3:** `difference() for(...)` was subtracting the loop's Nth body from its 1st;
+  `for`/`if` now yield a single implicit-union group, as in OpenSCAD. And expanding
+  scope surfaced three crash classes (uncaught OCCT `Standard_Failure`, out-of-bounds
+  built-in args, unbounded recursion) — all now fail loud, never `SIGABRT`/`SIGSEGV`.
 
 ---
 

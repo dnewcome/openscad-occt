@@ -5,8 +5,9 @@
 enum class Tok {
   End, Number, Ident, String,
   LParen, RParen, LBrace, RBrace, LBracket, RBracket,
-  Comma, Semicolon, Equal,
-  Plus, Minus, Star, Slash, Bang
+  Comma, Semicolon, Equal, Colon, Question,
+  Plus, Minus, Star, Slash, Percent, Bang,
+  Less, Greater, LessEq, GreaterEq, EqEq, NotEq, And, Or
 };
 
 struct Token {
